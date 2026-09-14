@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="A simple public uptime checker.">
+  <title>upornot — simple uptime checks</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <div class="glow glow-one"></div>
+  <div class="glow glow-two"></div>
+  <main class="shell">
+    <header class="hero">
+      <a class="brand" href="/" aria-label="upornot home">up<span>or</span>not</a>
+      <p>Check whether a public website is responding right now.</p>
+    </header>
+
+    <section class="checker-card" aria-labelledby="check-heading">
+      <div class="eyebrow">PUBLIC UPTIME CHECKER</div>
+      <h1 id="check-heading">Is it up?</h1>
+      <p class="intro">Paste a website. We check it now, then keep checking it for everyone.</p>
+      <form action="/sites" method="post">
+        <label for="url">Website address</label>
+        <div class="input-row">
+          <input id="url" name="url" type="text" inputmode="url" autocomplete="url" maxlength="2048" placeholder="github.com" value="{{.Prefill}}" required>
+          <button type="submit">Check site <span aria-hidden="true">→</span></button>
+        </div>
+        <p class="form-note">Public HTTP(S) websites only. Checks run every five minutes.</p>
+      </form>
+      <nav class="suggestions" aria-label="Suggested websites">
+        <span>Try</span>
+        {{range .Suggestions}}<a href="/?url={{.URL}}">{{.Name}}</a>{{end}}
+      </nav>
+    </section>
+
+    {{if .Added}}<p class="notice success" role="status">Site added and checked.</p>{{end}}
+    {{if .Error}}<p class="notice error" role="alert">{{.Error}}</p>{{end}}
+
+    <section class="sites-section" aria-labelledby="sites-heading">
+      <div class="section-heading">
+        <div>
+          <div class="eyebrow">WATCHLIST</div>
+          <h2 id="sites-heading">Checked sites</h2>
+        </div>
+        <span class="site-count">{{len .Sites}} total</span>
+      </div>
+
+      {{if .Sites}}
+      <ul class="site-list">
+        {{range .Sites}}
+        <li class="site-card">
+          <div class="site-topline">
+            <a class="site-url" href="{{.URL}}" target="_blank" rel="noopener noreferrer">{{.URL}}</a>
+            <span class="status status-{{.Status}}"><span class="status-dot"></span>{{statusLabel .Status}}</span>
+          </div>
+          <dl class="site-meta">
+            <div>
+              <dt>Last check</dt>
+              <dd>{{if .LastCheckedAt}}<time datetime="{{isoTime .LastCheckedAt}}">{{formatTime .LastCheckedAt}}</time>{{else}}Not checked yet{{end}}</dd>
+            </div>
+            {{if .StatusCode}}<div>
+              <dt>Response</dt>
+              <dd>HTTP {{.StatusCode}}</dd>
+            </div>{{end}}
+          </dl>
+          {{if .LastError}}<p class="check-error">{{.LastError}}</p>{{end}}
+        </li>
+        {{end}}
+      </ul>
+      {{else}}
+      <div class="empty-state">
+        <span aria-hidden="true">↗</span>
+        <p>No sites yet. Add the first one above.</p>
+      </div>
+      {{end}}
+    </section>
+  </main>
+</body>
+</html>
