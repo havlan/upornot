@@ -24,6 +24,7 @@ var webFiles embed.FS
 type app struct {
 	store    siteStore
 	checker  *checker
+	limiter  *rateLimiter
 	routes   http.Handler
 	template *template.Template
 }
@@ -57,17 +58,12 @@ func newApp(store siteStore, checker *checker) *app {
 	page := template.Must(template.New("index.html").Funcs(template.FuncMap{
 		"formatTime": formatTime,
 		"isoTime":    isoTime,
-		"statusLabel": func(status string) string {
-			if status == "" {
-				return "Unknown"
-			}
-			return strings.ToUpper(status[:1]) + status[1:]
-		},
 	}).ParseFS(webFiles, "web/index.html"))
 
 	app := &app{
 		store:    store,
 		checker:  checker,
+		limiter:  newRateLimiter(),
 		template: page,
 	}
 	mux := http.NewServeMux()
@@ -85,6 +81,15 @@ func (a *app) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Permissions-Policy", "camera=(), geolocation=(), microphone=()")
 	w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
+	if r.Method == http.MethodPost && (r.URL.Path == "/sites" || r.URL.Path == "/api/sites") && !a.limiter.Allow(clientIP(r), time.Now()) {
+		w.Header().Set("Retry-After", "60")
+		if r.URL.Path == "/api/sites" {
+			apiError(w, http.StatusTooManyRequests, "too many site checks; try again in a minute")
+		} else {
+			http.Error(w, "too many site checks; try again in a minute", http.StatusTooManyRequests)
+		}
+		return
+	}
 	a.routes.ServeHTTP(w, r)
 }
 
@@ -301,8 +306,12 @@ func main() {
 
 	checker := newChecker(store, timeout)
 	runScheduler(rootCtx, checker, interval)
+	port := strings.TrimSpace(os.Getenv("PORT"))
+	if port == "" {
+		port = "8080"
+	}
 	server := &http.Server{
-		Addr:              ":" + envOr("PORT", "8080"),
+		Addr:              ":" + port,
 		Handler:           newApp(store, checker),
 		ReadHeaderTimeout: 5 * time.Second,
 		WriteTimeout:      30 * time.Second,
@@ -327,11 +336,4 @@ func main() {
 			log.Printf("shutdown: %v", err)
 		}
 	}
-}
-
-func envOr(name, fallback string) string {
-	if value := strings.TrimSpace(os.Getenv(name)); value != "" {
-		return value
-	}
-	return fallback
 }

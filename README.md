@@ -25,6 +25,8 @@ DATABASE_URL='postgres://upornot:upornot@localhost:5432/upornot?sslmode=disable'
 
 The app creates its `sites` table automatically. `CHECK_INTERVAL` defaults to `5m`; `CHECK_TIMEOUT` defaults to `10s`.
 
+New-site submissions are limited to five per client IP each minute. The limiter is intentionally in memory because production runs one replica; use a shared gateway or limiter before scaling beyond one replica.
+
 ## API
 
 ```sh

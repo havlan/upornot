@@ -4,6 +4,9 @@ import (
 	"context"
 	"errors"
 	"net"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
@@ -88,5 +91,55 @@ func TestPublicIPFilter(t *testing.T) {
 	}
 	if !isPublicIP(net.ParseIP("1.1.1.1")) {
 		t.Error("1.1.1.1 should be reachable")
+	}
+}
+
+func TestRateLimiter(t *testing.T) {
+	limiter := newRateLimiter()
+	now := time.Date(2026, time.September, 14, 12, 0, 0, 0, time.UTC)
+	for attempt := 0; attempt < submissionLimit; attempt++ {
+		if !limiter.Allow("203.0.113.10", now) {
+			t.Fatalf("attempt %d was unexpectedly rate limited", attempt+1)
+		}
+	}
+	if limiter.Allow("203.0.113.10", now) {
+		t.Fatal("submission after the limit was allowed")
+	}
+	if !limiter.Allow("203.0.113.10", now.Add(submissionWindow)) {
+		t.Fatal("submission was not allowed after the window reset")
+	}
+}
+
+func TestClientIPUsesAzureForwardedAddress(t *testing.T) {
+	request := httptest.NewRequest(http.MethodPost, "/api/sites", nil)
+	request.RemoteAddr = "10.0.0.1:1234"
+	request.Header.Set("X-Forwarded-For", "198.51.100.10, 203.0.113.20")
+	if got := clientIP(request); got != "203.0.113.20" {
+		t.Fatalf("clientIP() = %q, want rightmost forwarded address", got)
+	}
+}
+
+func TestSiteSubmissionLimit(t *testing.T) {
+	store := newMemoryStore()
+	app := newApp(store, newChecker(store, time.Second))
+	for attempt := 0; attempt < submissionLimit; attempt++ {
+		request := httptest.NewRequest(http.MethodPost, "/api/sites", strings.NewReader(`{"url":"http://127.0.0.1"}`))
+		request.RemoteAddr = "203.0.113.10:1234"
+		recorder := httptest.NewRecorder()
+		app.ServeHTTP(recorder, request)
+		if recorder.Code != http.StatusBadRequest {
+			t.Fatalf("attempt %d returned %d, want %d", attempt+1, recorder.Code, http.StatusBadRequest)
+		}
+	}
+
+	request := httptest.NewRequest(http.MethodPost, "/api/sites", strings.NewReader(`{"url":"http://127.0.0.1"}`))
+	request.RemoteAddr = "203.0.113.10:1234"
+	recorder := httptest.NewRecorder()
+	app.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusTooManyRequests {
+		t.Fatalf("rate-limited request returned %d, want %d", recorder.Code, http.StatusTooManyRequests)
+	}
+	if got := recorder.Header().Get("Retry-After"); got != "60" {
+		t.Fatalf("Retry-After = %q, want 60", got)
 	}
 }

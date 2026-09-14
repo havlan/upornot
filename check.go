@@ -37,13 +37,8 @@ func newChecker(store siteStore, timeout time.Duration) *checker {
 	transport := &http.Transport{
 		Proxy:                 nil,
 		DialContext:           safeDialContext,
-		ForceAttemptHTTP2:     true,
-		MaxIdleConns:          10,
-		MaxIdleConnsPerHost:   2,
-		IdleConnTimeout:       30 * time.Second,
 		TLSHandshakeTimeout:   timeout,
 		ResponseHeaderTimeout: timeout,
-		ExpectContinueTimeout: time.Second,
 	}
 	checker.client = &http.Client{
 		Transport: transport,
