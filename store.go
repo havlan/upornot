@@ -14,8 +14,7 @@ import (
 )
 
 var (
-	errDuplicate = errors.New("site already exists")
-	errNotFound  = errors.New("site not found")
+	errNotFound = errors.New("site not found")
 )
 
 type Site struct {
@@ -26,6 +25,7 @@ type Site struct {
 	LastCheckedAt *time.Time `json:"lastCheckedAt,omitempty"`
 	LastError     string     `json:"lastError,omitempty"`
 	CreatedAt     time.Time  `json:"createdAt"`
+	RequestedAt   time.Time  `json:"-"`
 }
 
 type siteStore interface {
@@ -33,6 +33,7 @@ type siteStore interface {
 	Create(context.Context, string) (Site, error)
 	List(context.Context) ([]Site, error)
 	Due(context.Context, time.Time) ([]Site, error)
+	Evict(context.Context, time.Time) error
 	SaveCheck(context.Context, int64, string, int, time.Time, string) error
 	Health(context.Context) error
 }
@@ -66,16 +67,21 @@ func (s *memoryStore) Create(ctx context.Context, target string) (Site, error) {
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if _, exists := s.byURL[target]; exists {
-		return Site{}, errDuplicate
+	requestedAt := time.Now().UTC()
+	if id, exists := s.byURL[target]; exists {
+		site := s.sites[id]
+		site.RequestedAt = requestedAt
+		s.sites[id] = site
+		return site, nil
 	}
 
 	s.next++
 	site := Site{
-		ID:        s.next,
-		URL:       target,
-		Status:    "pending",
-		CreatedAt: time.Now().UTC(),
+		ID:          s.next,
+		URL:         target,
+		Status:      "pending",
+		CreatedAt:   requestedAt,
+		RequestedAt: requestedAt,
 	}
 	s.sites[site.ID] = site
 	s.byURL[target] = site.ID
@@ -97,6 +103,22 @@ func (s *memoryStore) List(ctx context.Context) ([]Site, error) {
 		return sites[i].ID > sites[j].ID
 	})
 	return sites, nil
+}
+
+func (s *memoryStore) Evict(ctx context.Context, before time.Time) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for id, site := range s.sites {
+		if !site.RequestedAt.After(before) {
+			delete(s.sites, id)
+			delete(s.byURL, site.URL)
+		}
+	}
+	return nil
 }
 
 func (s *memoryStore) Due(ctx context.Context, before time.Time) ([]Site, error) {
@@ -182,12 +204,18 @@ var schemaStatements = []string{
 		status_code INTEGER,
 		last_checked_at TIMESTAMPTZ,
 		last_error TEXT NOT NULL DEFAULT '',
-		created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+		created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+		requested_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 	)`,
+	`ALTER TABLE sites ADD COLUMN IF NOT EXISTS requested_at TIMESTAMPTZ`,
+	`UPDATE sites SET requested_at = created_at WHERE requested_at IS NULL`,
+	`ALTER TABLE sites ALTER COLUMN requested_at SET DEFAULT NOW()`,
+	`ALTER TABLE sites ALTER COLUMN requested_at SET NOT NULL`,
 	`CREATE INDEX IF NOT EXISTS sites_last_checked_at_idx ON sites (last_checked_at)`,
+	`CREATE INDEX IF NOT EXISTS sites_requested_at_idx ON sites (requested_at)`,
 }
 
-const siteColumns = `id, url, status, status_code, last_checked_at, last_error, created_at`
+const siteColumns = `id, url, status, status_code, last_checked_at, last_error, created_at, requested_at`
 
 func (s *postgresStore) Close() error {
 	return s.db.Close()
@@ -200,12 +228,9 @@ func (s *postgresStore) Health(ctx context.Context) error {
 func (s *postgresStore) Create(ctx context.Context, target string) (Site, error) {
 	row := s.db.QueryRowContext(ctx, `
 		INSERT INTO sites (url) VALUES ($1)
-		ON CONFLICT (url) DO NOTHING
+		ON CONFLICT (url) DO UPDATE SET requested_at = NOW()
 		RETURNING `+siteColumns, target)
 	site, err := scanSite(row)
-	if errors.Is(err, sql.ErrNoRows) {
-		return Site{}, errDuplicate
-	}
 	if err != nil {
 		return Site{}, err
 	}
@@ -228,6 +253,11 @@ func (s *postgresStore) List(ctx context.Context) ([]Site, error) {
 		sites = append(sites, site)
 	}
 	return sites, rows.Err()
+}
+
+func (s *postgresStore) Evict(ctx context.Context, before time.Time) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM sites WHERE requested_at <= $1`, before)
+	return err
 }
 
 func (s *postgresStore) Due(ctx context.Context, before time.Time) ([]Site, error) {
@@ -282,6 +312,7 @@ func scanSite(row interface{ Scan(...any) error }) (Site, error) {
 		&checkedAt,
 		&site.LastError,
 		&site.CreatedAt,
+		&site.RequestedAt,
 	); err != nil {
 		return Site{}, err
 	}
@@ -293,5 +324,6 @@ func scanSite(row interface{ Scan(...any) error }) (Site, error) {
 		site.LastCheckedAt = &time
 	}
 	site.CreatedAt = site.CreatedAt.UTC()
+	site.RequestedAt = site.RequestedAt.UTC()
 	return site, nil
 }

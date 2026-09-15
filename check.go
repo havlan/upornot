@@ -13,7 +13,10 @@ import (
 	"time"
 )
 
-const maxURLLength = 2048
+const (
+	maxURLLength = 2048
+	siteTTL      = 7 * 24 * time.Hour
+)
 
 var (
 	errInvalidURL   = errors.New("invalid URL")
@@ -115,6 +118,10 @@ func (c *checker) probe(ctx context.Context, target string) (int, error) {
 }
 
 func (c *checker) RunDue(ctx context.Context, interval time.Duration) {
+	if err := c.store.Evict(ctx, time.Now().UTC().Add(-siteTTL)); err != nil {
+		log.Printf("evict expired sites: %v", err)
+		return
+	}
 	sites, err := c.store.Due(ctx, time.Now().UTC().Add(-interval))
 	if err != nil {
 		log.Printf("find due sites: %v", err)

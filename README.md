@@ -1,6 +1,6 @@
 # upornot
 
-A small public uptime checker written with Go's standard HTTP and HTML tooling. Add a public web address, see its current response and last check time, then let the service check it again every five minutes.
+A small public uptime checker written with Go's standard HTTP and HTML tooling. Add a public web address, see its current response and last check time, then let the service check it again every five minutes. Sites expire seven days after they were last submitted.
 
 ## Run locally
 
@@ -36,7 +36,7 @@ curl -X POST http://localhost:8080/api/sites \
   -d '{"url":"github.com"}'
 ```
 
-`POST /api/sites` checks the address immediately. `GET /api/sites` returns the saved watchlist. `GET /healthz` is ready for a container health probe.
+`POST /api/sites` checks the address immediately and refreshes its seven-day lease. `GET /api/sites` returns the saved watchlist. `GET /healthz` is ready for a container health probe.
 
 ## Azure Container Apps
 
