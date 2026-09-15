@@ -18,7 +18,7 @@ import (
 	"time"
 )
 
-//go:embed web/index.html web/style.css
+//go:embed web/*
 var webFiles embed.FS
 
 type app struct {
