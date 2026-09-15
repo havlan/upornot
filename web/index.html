@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="A simple public uptime checker.">
   <title>upornot — simple uptime checks</title>
+  <link rel="icon" href="/static/icon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
@@ -19,7 +20,7 @@
     <section class="checker-card" aria-labelledby="check-heading">
       <div class="eyebrow">PUBLIC UPTIME CHECKER</div>
       <h1 id="check-heading">Is it up?</h1>
-      <p class="intro">Paste a website. We check it now, then keep checking it for everyone.</p>
+      <p class="intro">Paste a website. We check it now, then keep checking it for seven days.</p>
       <form action="/sites" method="post">
         <label for="url">Website address</label>
         <div class="input-row">
@@ -34,7 +35,7 @@
       </nav>
     </section>
 
-    {{if .Added}}<p class="notice success" role="status">Site added and checked.</p>{{end}}
+    {{if .Added}}<p class="notice success" role="status">Site requested and checked.</p>{{end}}
     {{if .Error}}<p class="notice error" role="alert">{{.Error}}</p>{{end}}
 
     <section class="sites-section" aria-labelledby="sites-heading">

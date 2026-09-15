@@ -18,7 +18,7 @@ import (
 	"time"
 )
 
-//go:embed web/index.html web/style.css
+//go:embed web/*
 var webFiles embed.FS
 
 type app struct {
@@ -239,8 +239,6 @@ func statusForError(err error) int {
 	switch {
 	case errors.Is(err, errInvalidURL):
 		return http.StatusBadRequest
-	case errors.Is(err, errDuplicate):
-		return http.StatusConflict
 	default:
 		return http.StatusInternalServerError
 	}
@@ -248,8 +246,6 @@ func statusForError(err error) int {
 
 func friendlyError(err error) string {
 	switch {
-	case errors.Is(err, errDuplicate):
-		return "That site is already being checked."
 	case errors.Is(err, errInvalidURL):
 		return err.Error()
 	default:

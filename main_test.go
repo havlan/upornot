@@ -83,6 +83,50 @@ func TestMemoryStoreTracksChecksAndDueSites(t *testing.T) {
 	}
 }
 
+func TestMemoryStoreRefreshesAndEvictsSites(t *testing.T) {
+	store := newMemoryStore()
+	ctx := context.Background()
+	site, err := store.Create(ctx, "https://github.com/")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	expiredAt := time.Now().UTC().Add(-siteTTL)
+	site.RequestedAt = expiredAt
+	store.sites[site.ID] = site
+
+	refreshed, err := store.Create(ctx, site.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if refreshed.ID != site.ID || !refreshed.RequestedAt.After(expiredAt) {
+		t.Fatalf("site was not refreshed: %#v", refreshed)
+	}
+	if err := store.Evict(ctx, time.Now().UTC().Add(-siteTTL)); err != nil {
+		t.Fatal(err)
+	}
+	sites, err := store.List(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sites) != 1 {
+		t.Fatalf("refreshed site was evicted: %#v", sites)
+	}
+
+	refreshed.RequestedAt = expiredAt
+	store.sites[site.ID] = refreshed
+	if err := store.Evict(ctx, time.Now().UTC().Add(-siteTTL)); err != nil {
+		t.Fatal(err)
+	}
+	sites, err = store.List(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sites) != 0 {
+		t.Fatalf("expired site was not evicted: %#v", sites)
+	}
+}
+
 func TestPublicIPFilter(t *testing.T) {
 	for _, value := range []string{"127.0.0.1", "10.0.0.1", "100.64.0.1", "169.254.169.254", "198.18.0.1"} {
 		if isPublicIP(net.ParseIP(value)) {
